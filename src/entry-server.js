@@ -7,7 +7,7 @@ export default context => {
     router.push(context.url)
 
     router.onReady(() => {
-      const matchedComponents = router.matchedComponents()
+      const matchedComponents = router.getMatchedComponents()
 
       if (!matchedComponents.length) {
         reject(new Error('no components matched'))
