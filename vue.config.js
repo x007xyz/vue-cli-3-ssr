@@ -6,10 +6,15 @@ const TARGET_NODE = process.env.WEBPACK_TARGET === 'node'
 const target = TARGET_NODE ? 'server' : 'client'
 
 module.exports = {
+  devServer: {
+    headers: {
+      'Access-Control-Allow-Origin': '*'
+    }
+  },
   publicPath: '',
   css: {
     sourceMap: true, // 解决使用yarn报错的问题
-    extract: true
+    extract: false
   },
   configureWebpack: () => ({
     // 将 entry 指向应用程序的 server / client 文件
@@ -39,7 +44,7 @@ module.exports = {
       })
       : undefined,
     optimization: {
-      splitChunks: TARGET_NODE ? false : undefined
+      splitChunks: undefined
     },
     plugins: [TARGET_NODE ? new VueSSRServerPlugin() : new VueSSRClientPlugin()]
   }),
