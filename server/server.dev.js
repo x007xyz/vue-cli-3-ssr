@@ -27,26 +27,58 @@ const renderer = (bundle, clientManifest) => createBundleRenderer(bundle, {
   template: fs.readFileSync(resolve('../src/index.temp.html'), 'utf-8'),
   clientManifest
 })
+const webpack = require('webpack')
+const MemoryFs = require('memory-fs')
+const mfs = new MemoryFs()
+// 1、webpack配置文件
+const webpackConfig = require('@vue/cli-service/webpack.config')
+
+// 2、编译webpack配置文件
+const serverCompiler = webpack(webpackConfig)
+// 指定输出到的内存流中
+serverCompiler.outputFileSystem = mfs
+
+// 3、监听文件修改，实时编译获取最新的 vue-ssr-server-bundle.json
+let bundle
+serverCompiler.watch({}, (err, stats) => {
+  if (err) {
+    throw err
+  }
+  stats = stats.toJson()
+  stats.errors.forEach(error => console.error(error))
+  stats.warnings.forEach(warn => console.warn(warn))
+  const bundlePath = path.join(
+    webpackConfig.output.path,
+    'vue-ssr-server-bundle.json'
+  )
+  bundle = JSON.parse(mfs.readFileSync(bundlePath, 'utf-8'))
+  console.log('new bundle generated')
+})
 // 构建信息
-const getBundle = () => {
-  return axios.get('http://localhost:8881/vue-ssr-server-bundle.json')
-}
+// const getBundle = () => {
+//   return axios.get('http://localhost:8881/vue-ssr-server-bundle.json')
+// }
 const getManifest = () => {
-  return axios.get('http://localhost:8880/vue-ssr-client-manifest.json')
+  return axios.get('http://localhost:8880/vue-ssr-client-manifest.json').then(res => res.data)
 }
 
-const getBuildJson = () => {
-  return axios.all([getBundle(), getManifest()]).then(axios.spread((bundle, manifest) => {
-    return { bundle: bundle.data, manifest: manifest.data }
-  })).catch(err => {
-    console.log('err', err)
-  })
-}
+// const getBuildJson = () => {
+//   return axios.all([getBundle(), getManifest()]).then(axios.spread((bundle, manifest) => {
+//     return { bundle: bundle.data, manifest: manifest.data }
+//   })).catch(err => {
+//     console.log('err', err)
+//   })
+// }
 // let bundle = require('../dist/vue-ssr-server-bundle.json')
 // let manifest = require('../dist/vue-ssr-client-manifest.json')
-
+const proxy = require('http-proxy-middleware')
+app.use('/sockjs-node', proxy({
+  target: `http://localhost:8880/`,
+  changeOrigin: true,
+  ws: true
+}))
 app.use('*', (req, res) => {
-  getBuildJson().then(({ bundle, manifest }) => {
+  getManifest().then(manifest => {
     if (!bundle) {
       res.body = '等待webpack打包完成后在访问在访问'
       return

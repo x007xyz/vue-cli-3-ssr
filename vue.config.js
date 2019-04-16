@@ -4,6 +4,7 @@ const nodeExternals = require('webpack-node-externals')
 const merge = require('lodash.merge')
 const TARGET_NODE = process.env.WEBPACK_TARGET === 'node'
 const target = TARGET_NODE ? 'server' : 'client'
+const isDev = process.env.NODE_ENV !== 'production'
 
 module.exports = {
   devServer: {
@@ -11,10 +12,10 @@ module.exports = {
       'Access-Control-Allow-Origin': '*'
     }
   },
-  publicPath: '',
+  baseUrl: isDev ? 'http://127.0.0.1:8880' : '',
   css: {
     sourceMap: true, // 解决使用yarn报错的问题
-    extract: false
+    extract: true
   },
   configureWebpack: () => ({
     // 将 entry 指向应用程序的 server / client 文件

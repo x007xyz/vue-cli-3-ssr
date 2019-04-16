@@ -22,6 +22,83 @@
 在上一个步骤中，我们已经生产了vue服务端渲染需要的相关配置文件，构建express我们需要的是使用vue-server-renderer加载相关的配置文件，然后在express路由将所有的路径都使用vue-server-renderer的createBundleRender方法进行页面渲染。针对页面中的静态文件我们还要配置相应的静态路径，使页面能够获取正确的文件信息。
 
 ### 5、实现支持热更新的开发环境
-我们现在的方案实际上存在服务端、客户端两端的渲染方案的，所以我们的webpack的配置是需要两套不同的配置，而vue-cli3中启动一个项目是无法同时获取我们想要的两套配置，我们只能使用不同的参数启动两次vue-cli3的服务，每次获取不同的配置。
+我们现在的方案实际上存在服务端、客户端两端的渲染方案的，所以我们的webpack的配置是需要两套不同的配置，而vue-cli3中启动一个项目是无法同时获取我们想要的两套配置。
+>  方案一
+
+
+使用不同的参数启动两次vue-cli3的服务，每次获取不同的配置，理论上可行，但是实际出现错误：
 ```
+ReferenceError: self is not defined
+    at Object.<anonymous> ((webpack)-dev-server/client:57:0)
+    at Object../node_modules/webpack-dev-server/client/index.js?http://localhost (main.js:4265:30)
+    at __webpack_require__ (webpack/bootstrap:688:0)
+    at fn (webpack/bootstrap:59:0)
+    at Object.1 (main.js:5142:1)
+    at __webpack_require__ (webpack/bootstrap:688:0)
+    at main.js:784:37
+    at Object.<anonymous> (main.js:787:10)
+    at evaluateModule (/Users/zhangxiangchen/Code/Demo/vue-cli-3-ssr/node_modules/vue-server-renderer/build.dev.js:9303:21)
+    at /Users/zhangxiangchen/Code/Demo/vue-cli-3-ssr/node_modules/vue-server-renderer/build.dev.js:9361:18
 ```
+相关的配置文件可以获取，但是在createBundleRenderer中使用时，出现错误，原因不明，放弃方案一。
+> 方案二
+
+
+使用webpack生成node端服务器配置，使用vue-cli3生成客户端配置。
+```
+const webpack = require('webpack')
+const MemoryFs = require('memory-fs')
+const mfs = new MemoryFs()
+// 1、webpack配置文件
+const webpackConfig = require('@vue/cli-service/webpack.config')
+
+// 2、编译webpack配置文件
+const serverCompiler = webpack(webpackConfig)
+// 指定输出到的内存流中
+serverCompiler.outputFileSystem = mfs
+
+// 3、监听文件修改，实时编译获取最新的 vue-ssr-server-bundle.json
+let bundle
+serverCompiler.watch({}, (err, stats) => {
+  if (err) {
+    throw err
+  }
+  stats = stats.toJson()
+  stats.errors.forEach(error => console.error(error))
+  stats.warnings.forEach(warn => console.warn(warn))
+  const bundlePath = path.join(
+    webpackConfig.output.path,
+    'vue-ssr-server-bundle.json'
+  )
+  bundle = JSON.parse(mfs.readFileSync(bundlePath, 'utf-8'))
+  console.log('new bundle generated')
+})
+```
+在开发环境运行时需要添加环境变量`WEBPACK_TARGET=node`这样webpack的配置才是编译`vue-ssr-server-bundle.json`文件的。使用webpack获取配置文件的基本思路就是讲webpack的输出指向为内存流，然后监听文件修改获取配置文件。
+```
+const getManifest = () => {
+  return axios.get('http://localhost:8880/vue-ssr-client-manifest.json').then(res => res.data)
+}
+```
+vue-cli3运行会占用接口，直接读取相应端口的相应文件信息，在vue.config.js中配置`baseUrl: isDev ? 'http://127.0.0.1:8880' : '',`让开发环境的能够顺利获取静态文件资源，这里还需要跨域的配置：
+```
+devServer: {
+    headers: {
+      'Access-Control-Allow-Origin': '*'
+    }
+  },
+```
+此时项目已经可以正常运行了，但是还是无法进行热更新，我们需要把热更新相关的接口请求转发到vue-cli3启动的服务器上：
+```
+const proxy = require('http-proxy-middleware')
+app.use('/sockjs-node', proxy({
+  target: `http://localhost:8880/`,
+  changeOrigin: true,
+  ws: true
+}))
+```
+现在尝试修改文件，项目已经会自动更新了。
+### 参考项目：  
+> [vue-cli3构建ssr案例一](https://github.com/lentoo/vue-cli-ssr-example)  
+> [vue-cli3构建ssr案例二](https://github.com/eddyerburgh/vue-cli-ssr-example)  
+> [vue-hackernews-2.0](https://github.com/vuejs/vue-hackernews-2.0)
